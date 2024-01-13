@@ -10,6 +10,4 @@ def test(q):
 
 
 if __name__ == '__main__':
-    print(test(4))
-
-
+    print(test(1))

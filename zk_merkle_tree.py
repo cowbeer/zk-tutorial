@@ -54,6 +54,7 @@ def verify_merkle_path(root, data_size, value_id, value, path):
     return root == cur
 
 
+# proof: [root, query_index, value of index, [auth path of index], value of index+1, [auth path of index+1]]
 def get_proof(problem, assignment, num_queries):
     proof = []
     randomness_seed = problem[:]
@@ -77,7 +78,9 @@ def verify_proof(problem, proof):
     for query in proof:
         random.seed(str(randomness_seed))
         query_index = random.randint(0, len(problem))
+        # proof中第一个元素为树根
         merkle_root = query[0]
+        # 判断proof中第二个元素是否为query index
         proof_checks_out &= query_index == query[1]
         if query_index < len(problem):
             proof_checks_out &= abs(query[2] - query[4]) == abs(problem[query_index])
@@ -93,7 +96,8 @@ def verify_proof(problem, proof):
 # 验证auth path
 def verify_zk_merkle_path(root, data_size, id, value, path):
     cur = hash_string(str(value))
-    tree_node_id = id * 2 + int(2 ** ceil(log2(data_size * 2)))
+    # 计算树中对应的node id
+    tree_node_id = id * 2 + int(2 ** ceil(log2(data_size))) * 2
     for sibling in path:
         assert tree_node_id > 1
         if tree_node_id % 2 == 0:
@@ -110,7 +114,7 @@ class MerkleTree:
         self.data = data
         # 计算叶子节点能存下data的满二叉树的高度
         next_pow_of_2 = int(2 ** ceil(log2(len(data))))
-        # data不能使叶子节点满足慢二叉树,则后面补0
+        # 扩展data,保证能存放满二叉树,后面补0
         self.data.extend([0] * (next_pow_of_2 - len(data)))
         # tree的大小是data的2倍，前面用空字符填
         self.tree = ["" for x in self.data] + [hash_string(str(x)) for x in self.data]
@@ -142,15 +146,15 @@ class ZkMerkleTree:
         self.data = data
         # 计算满二叉树高度(向上取整)
         next_power_of_2 = int(2 ** ceil(log2(len(data))))
-        # 扩展数组,保证能存放满二叉树
+        # 扩展data,保证能存放满二叉树,后面补0
         self.data.extend([0] * (next_power_of_2 - len(data)))
         # 产生随机数列表
         random_list = [random.randint(0, 1 << 32) for x in self.data]
-        #
+        # 将data与相同数量的随机数相间排列,data大小变为原来的2倍
         self.data = [x for tup in zip(self.data, random_list) for x in tup]
-        #
+        # data再变为原来的2倍，前面用空字符串填充
         self.tree = ["" for x in self.data] + [hash_string(str(x)) for x in self.data]
-        # 构造二叉树
+        # 遍历,构造二叉树
         for i in range(len(self.data) - 1, 0, -1):
             self.tree[i] = hash_string(self.tree[i * 2] + self.tree[i * 2 + 1])
 
@@ -159,12 +163,15 @@ class ZkMerkleTree:
         return self.tree[1]
 
     # 返回某个节点的auth path
-    def get_val_and_path(self, index):
-        index = index * 2
-        val = self.data[index]
-        index = index + len(self.data)
+    def get_val_and_path(self, id):
+        # 由于填充了相同数量的随机数故id为原来的2倍
+        id = id * 2
+        val = self.data[id]
+        print(self.data)
+        # 计算在树中的node id
+        id = id + len(self.data)
         auth_path = []
-        while index > 1:
-            auth_path += [self.tree[index ^ 1]]
-            index = index // 2
+        while id > 1:
+            auth_path += [self.tree[id ^ 1]]
+            id = id // 2
         return val, auth_path
