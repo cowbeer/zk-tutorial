@@ -3,38 +3,54 @@ import random
 from math import log2, ceil
 
 
+# 计算字符串哈希
 def hash_string(s):
     return hashlib.sha256(s.encode()).hexdigest()
 
 
+# 生成witness列表
 def get_witness(problem, assignment):
+    # 当前的和
     sum = 0
+    # 最大值
     mx = 0
+    # 混淆器取1或-1
     side_obfuscator = 1 - 2 * random.randint(0, 1)
+    # witness第一个元素为0
     witness = [sum]
     assert len(problem) == len(assignment)
+    # 计算出witness中的每个元素
     for num, side in zip(problem, assignment):
         assert side == 1 or side == -1
         sum += side * num * side_obfuscator
         witness += [sum]
         mx = max(mx, num)
     assert sum == 0
+    # 产生一个随机数
     shift = random.randint(0, mx)
+    # witness中每个元素加上一个随机数
     witness = [x + shift for x in witness]
     return witness
 
 
+# 验证merkle path
 def verify_merkle_path(root, data_size, value_id, value, path):
     cur = hash_string(str(value))
+    # 根据data id计算出在树中的node id
     tree_node_id = value_id + int(2 ** ceil(log2(data_size)))
+    # 遍历merkle path
     for sibling in path:
         assert tree_node_id > 1
+        # 根据id的奇偶性计算其父节点的hash
         if tree_node_id % 2 == 0:
             cur = hash_string(cur + sibling)
         else:
             cur = hash_string(sibling + cur)
+        # 计算其父节点id
         tree_node_id = tree_node_id // 2
+    # 树node id为1时退出循环
     assert tree_node_id == 1
+    # 比较算出的根节点哈希与传入的跟节点哈希是否相等
     return root == cur
 
 
@@ -92,21 +108,31 @@ def verify_zk_merkle_path(root, data_size, id, value, path):
 class MerkleTree:
     def __init__(self, data):
         self.data = data
+        # 计算叶子节点能存下data的满二叉树的高度
         next_pow_of_2 = int(2 ** ceil(log2(len(data))))
+        # data不能使叶子节点满足慢二叉树,则后面补0
         self.data.extend([0] * (next_pow_of_2 - len(data)))
+        # tree的大小是data的2倍，前面用空字符填
         self.tree = ["" for x in self.data] + [hash_string(str(x)) for x in self.data]
+        # 遍历,构造二叉树
         for i in range(len(self.data) - 1, 0, -1):
             self.tree[i] = hash_string(self.tree[i * 2] + self.tree[i * 2 + 1])
 
+    # 返回树根
     def get_root(self):
+        # 第一个元素是0,root是下标是1
         return self.tree[1]
 
+    # 根据data id获取其merkle path
     def get_val_and_path(self, id):
         val = self.data[id]
         auth_path = []
+        # 根据data id计算出在树中的node id
         id = id + len(self.data)
         while id > 1:
+            # id^1:若id是奇数,将id减1;若id是偶数,将id加1,也就是取id的兄弟节点
             auth_path += [self.tree[id ^ 1]]
+            # 将id除以2,再向下取整,即算出其父节点id
             id = id // 2
         return val, auth_path
 
@@ -114,7 +140,7 @@ class MerkleTree:
 class ZkMerkleTree:
     def __init__(self, data):
         self.data = data
-        # 计算满二叉树层数(向上取整)
+        # 计算满二叉树高度(向上取整)
         next_power_of_2 = int(2 ** ceil(log2(len(data))))
         # 扩展数组,保证能存放满二叉树
         self.data.extend([0] * (next_power_of_2 - len(data)))
